@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from models.schemas import StructureRequest, StructureResponse, ExportRequest
 from services.structurer import structure
 from services import exporter
+from urllib.parse import quote
 import io
 
 router = APIRouter(prefix="/api", tags=["structure"])
@@ -20,8 +21,9 @@ async def structure_transcript(req: StructureRequest):
 async def export_docx(req: ExportRequest):
     buf: io.BytesIO = exporter.to_docx(req.mode, req.result)
     filename = "회의록.docx" if req.mode == "meeting" else "현장메모.docx"
+    encoded = quote(filename)
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded}"},
     )

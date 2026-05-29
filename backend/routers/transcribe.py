@@ -5,10 +5,11 @@ from services.transcriber import transcribe_audio
 router = APIRouter(prefix="/api", tags=["transcribe"])
 
 ALLOWED_CONTENT_TYPES = {
-    "audio/mpeg", "audio/mp4", "audio/wav", "audio/webm",
+    "audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/m4a",
+    "audio/wav", "audio/x-wav", "audio/webm",
     "audio/ogg", "audio/flac", "application/octet-stream",
 }
-MAX_FILE_MB = 25
+MAX_FILE_MB = 500  # 청크 분할로 처리하므로 500MB까지 허용
 
 
 @router.post("/transcribe", response_model=TranscribeResponse)
