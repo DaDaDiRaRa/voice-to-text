@@ -15,6 +15,7 @@ from models.schemas import (
     FieldMetadata,
     ActionItem,
 )
+from services.llm_usage import log_reply
 
 _client: AsyncAnthropic | None = None
 
@@ -62,6 +63,7 @@ async def structure_meeting(transcript: str) -> MeetingStructure:
         system=_MEETING_SYSTEM,
         messages=[{"role": "user", "content": f"회의 녹취:\n\n{transcript}"}],
     )
+    log_reply("voice-to-text", MODEL, response, {"max_tokens": 2048, "purpose": "meeting"})
     raw = response.content[0].text.strip()
     data = json.loads(raw)
     data["action_items"] = [ActionItem(**item) for item in data.get("action_items", [])]
@@ -110,6 +112,7 @@ async def structure_field(
         system=_FIELD_SYSTEM,
         messages=[{"role": "user", "content": context}],
     )
+    log_reply("voice-to-text", MODEL, response, {"max_tokens": 2048, "purpose": "field"})
     raw = response.content[0].text.strip()
     data = json.loads(raw)
     return FieldNoteStructure(**data, tags=metadata or FieldMetadata())

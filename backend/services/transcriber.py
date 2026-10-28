@@ -8,6 +8,9 @@ import tempfile
 from pathlib import Path
 from openai import AsyncOpenAI
 from pydub import AudioSegment
+from pydub.utils import mediainfo
+
+from services.llm_usage import log_units
 
 _client: AsyncOpenAI | None = None
 
@@ -38,7 +41,8 @@ async def transcribe_audio(audio_bytes: bytes, filename: str = "audio.webm") -> 
     return await _transcribe_chunked(audio_bytes, suffix)
 
 
-async def _transcribe_bytes(audio_bytes: bytes, filename: str, suffix: str) -> str:
+async def _transcribe_bytes(audio_bytes: bytes, filename: str, suffix: str,
+                            duration_s: float | None = None) -> str:
     client = _get_client()
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -53,9 +57,23 @@ async def _transcribe_bytes(audio_bytes: bytes, filename: str, suffix: str) -> s
                 language="ko",
                 response_format="text",
             )
+        _log_audio(tmp_path, len(audio_bytes), duration_s)
         return str(response).strip()
     finally:
         Path(tmp_path).unlink(missing_ok=True)
+
+
+def _log_audio(path: str, n_bytes: int, duration_s: float | None) -> None:
+    """STT 1회를 llm_usage 로 — 이 모델은 오디오 길이로 과금된다. text 응답엔 usage 가 없어
+    길이를 파일 머리(ffprobe)에서 읽는다. 머리에 길이가 없는 녹음(브라우저 webm 등)은 None."""
+    if duration_s is None:
+        try:
+            duration_s = round(float(mediainfo(path)["duration"]), 1)
+        except Exception:  # noqa: BLE001 — 길이를 모르면 모른다고 남긴다
+            duration_s = None
+    log_units("voice-to-text", "openai", "gpt-4o-mini-transcribe",
+              units={"audio_seconds": duration_s, "audio_bytes": n_bytes},
+              meta={"purpose": "transcribe"})
 
 
 async def _transcribe_chunked(audio_bytes: bytes, suffix: str) -> str:
@@ -86,7 +104,8 @@ async def _transcribe_chunked(audio_bytes: bytes, suffix: str) -> str:
         try:
             chunk.export(chunk_path, format="mp3", parameters=["-q:a", "4"])
             chunk_bytes = Path(chunk_path).read_bytes()
-            text = await _transcribe_bytes(chunk_bytes, f"chunk_{i}.mp3", ".mp3")
+            text = await _transcribe_bytes(chunk_bytes, f"chunk_{i}.mp3", ".mp3",
+                                           duration_s=round(len(chunk) / 1000, 1))
             if text:
                 results.append(text)
         finally:
